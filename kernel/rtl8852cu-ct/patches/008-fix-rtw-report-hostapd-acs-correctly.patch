@@ -1,0 +1,49 @@
+diff --git a/os_dep/linux/ioctl_cfg80211.c b/os_dep/linux/ioctl_cfg80211.c
+index c8b7ca4..a382c8a 100644
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -10342,23 +10342,32 @@ static void rtw_cfg80211_set_survey_info_with_find_best_channel(struct wiphy *wi
+ #ifdef CONFIG_RTW_ACS
+ static void rtw_cfg80211_set_survey_info_with_clm(_adapter *padapter, int idx, struct survey_info *pinfo)
+ {
++	/* ToDo CONFIG_RTW_MLD: [currently primary link only] */
++	struct _ADAPTER_LINK *plink = GET_PRIMARY_LINK(padapter);
++
+ 	s8 noise = -50;			/*channel noise in dBm. This and all following fields are optional */
+ 	u8 time = SURVEY_TO;	/*amount of time in ms the radio was turn on (on the channel)*/
+ 	u8 time_busy = 0;		/*amount of time the primary channel was sensed busy*/
+ 
++	u8 band = nl80211_band_to_rtw_band(pinfo->channel->band);
++
+ 	if ((idx < 0) || (pinfo == NULL))
+ 		return;
+ 
++	if (plink->mlmeextpriv.chandef.band == band &&
++			plink->mlmeextpriv.chandef.chan == pinfo->channel->hw_value)
++		pinfo->filled |= SURVEY_INFO_IN_USE;
++
+ 	pinfo->filled  = SURVEY_INFO_NOISE_DBM
+ 		#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37))
+ 		| SURVEY_INFO_TIME | SURVEY_INFO_TIME_BUSY
+ 		#endif
+ 		;
+ 
+-	time_busy = rtw_acs_get_clm_ratio(padapter, pinfo->channel->band, pinfo->channel->hw_value);
+-	noise = rtw_acs_get_noise_dbm(padapter, pinfo->channel->band, pinfo->channel->hw_value);
++	time_busy = rtw_acs_get_clm_ratio(padapter, band, pinfo->channel->hw_value);
++	noise = rtw_acs_get_noise_dbm(padapter, band, pinfo->channel->hw_value);
+ 	RTW_INFO("[%d] ch=%d, band=%d, time=%d(ms), time_busy=%d(ms), noise=%d(dbm)\n",
+-		idx, pinfo->channel->hw_value, pinfo->channel->band ,time, time_busy, noise);
++		idx, pinfo->channel->hw_value, band, time, time_busy, noise);
+ 
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 37))
+ 	#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0))
+@@ -10369,7 +10378,7 @@ static void rtw_cfg80211_set_survey_info_with_clm(_adapter *padapter, int idx, s
+ 	pinfo->time_busy = time_busy;
+ 	#endif
+ #endif
+-	pinfo->noise = noise;
++	pinfo->noise = noise > 0 ? rtw_phl_rssi_to_dbm(noise) : 0;
+ }
+ #endif
+ 

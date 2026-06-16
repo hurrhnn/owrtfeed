@@ -1,0 +1,102 @@
+diff --git a/os_dep/linux/ioctl_cfg80211.c b/os_dep/linux/ioctl_cfg80211.c
+index c8b7ca4..074d570 100644
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -4450,7 +4450,22 @@ static int cfg80211_rtw_get_txpower(struct wiphy *wiphy,
+ {
+ 	RTW_INFO("%s\n", __func__);
+ 
+-	*dbm = (12);
++	// *dbm = (12);
++
++	struct net_device *ndev = wdev_to_ndev(wdev);
++	_adapter *padapter = (_adapter *)rtw_netdev_priv(ndev);
++	void *phl = GET_PHL_INFO(adapter_to_dvobj(padapter));
++	s16 *prev_tx_pwr_dbm = rtw_phl_get_txinfo_pwr_var(phl);
++	s16 tx_pwr_dbm = 0;
++	int res;
++
++	res = rtw_phl_cmd_get_txinfo_pwr(phl, &tx_pwr_dbm, 0, false);
++	if (res == 0) {
++		if (tx_pwr_dbm)
++			*prev_tx_pwr_dbm = (tx_pwr_dbm >> 2);
++	}
++
++	*dbm = (*prev_tx_pwr_dbm);
+ 
+ 	return 0;
+ }
+diff --git a/phl/hal_g6/hal_api.h b/phl/hal_g6/hal_api.h
+index 45da85d..234e80b 100644
+--- a/phl/hal_g6/hal_api.h
++++ b/phl/hal_g6/hal_api.h
+@@ -1273,6 +1273,8 @@ enum rtw_hal_status rtw_hal_set_tx_power(void *hal, u8 band_idx,
+ 
+ enum rtw_hal_status rtw_hal_get_txinfo_power(
+ 	void *hal, s16 *txinfo_power_dbm);
++
++s16 *rtw_hal_get_txinfo_power_var(void *hal);
+ /*****************************************************************************/
+ 
+ u32 rtw_hal_get_phy_stat_info(void *hal, enum phl_band_idx hw_band,
+diff --git a/phl/hal_g6/hal_def.h b/phl/hal_g6/hal_def.h
+index 965da2f..3cb04b2 100644
+--- a/phl/hal_g6/hal_def.h
++++ b/phl/hal_g6/hal_def.h
+@@ -1118,6 +1118,7 @@ struct rtw_hal_com_t {
+ 
+ 	bool dbcc_en;
+ 	u8 assoc_sta_cnt; /*number of associated nodes (sta or ap)*/
++	s16 tx_pwr_dbm;
+ 
+ #ifdef RTW_WKARD_SINGLE_PATH_RSSI
+ 	enum rf_path cur_rx_rfpath;
+diff --git a/phl/hal_g6/hal_txpwr.c b/phl/hal_g6/hal_txpwr.c
+index 8b5c2f0..5396ba7 100644
+--- a/phl/hal_g6/hal_txpwr.c
++++ b/phl/hal_g6/hal_txpwr.c
+@@ -187,6 +187,13 @@ enum rtw_hal_status rtw_hal_get_txinfo_power(void *hal,
+ 	return hal_status;
+ }
+ 
++s16 *rtw_hal_get_txinfo_power_var(void *hal)
++{
++	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
++
++	return &hal_info->hal_com->tx_pwr_dbm;
++}
++
+ u8 rtw_hal_get_tx_tbl_to_pwr_times(void *hal)
+ {
+ 	struct hal_info_t *hal_info = (struct hal_info_t *)hal;
+diff --git a/phl/phl_api.h b/phl/phl_api.h
+index 499218c..3cb7654 100644
+--- a/phl/phl_api.h
++++ b/phl/phl_api.h
+@@ -1096,6 +1096,8 @@ enum rtw_phl_status
+ rtw_phl_cmd_get_txinfo_pwr(void *phl, s16 *pwr_dbm,
+ 				enum phl_band_idx band_idx,
+ 				bool direct);
++
++s16 *rtw_phl_get_txinfo_pwr_var(void *phl);
+ /*****************************************************************************/
+ 
+ u32 rtw_phl_get_phy_stat_info(void *phl, enum phl_band_idx hw_band,
+diff --git a/phl/phl_txpwr.c b/phl/phl_txpwr.c
+index 875865b..44f1aa4 100644
+--- a/phl/phl_txpwr.c
++++ b/phl/phl_txpwr.c
+@@ -558,6 +558,13 @@ rtw_phl_cmd_get_txinfo_pwr(void *phl, s16 *pwr_dbm,
+ }
+ #endif
+ 
++s16 *rtw_phl_get_txinfo_pwr_var(void *phl)
++{
++	struct phl_info_t *phl_info = (struct phl_info_t *)phl;
++
++	return rtw_hal_get_txinfo_power_var(phl_info->hal);
++}
++
+ static enum rtw_phl_status
+ _update_tpe_info(void *phl,
+ 	struct rtw_tpe_info_t *tpe_info)

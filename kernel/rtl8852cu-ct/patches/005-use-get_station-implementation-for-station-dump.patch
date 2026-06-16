@@ -1,0 +1,41 @@
+From 3ad55a7d184c5beafbc564d0835e70c1824ff0f5 Mon Sep 17 00:00:00 2001
+From: Rhnn Hur <hurrhnn@icmp.kr>
+Date: Fri, 3 Oct 2025 10:46:33 +0900
+Subject: [PATCH] os_dep: use get_station implementation for dump station
+
+Signed-off-by: Rhnn Hur <hurrhnn@icmp.kr>
+---
+ os_dep/linux/ioctl_cfg80211.c | 10 +++-------
+ 1 file changed, 3 insertions(+), 7 deletions(-)
+
+diff --git a/os_dep/linux/ioctl_cfg80211.c b/os_dep/linux/ioctl_cfg80211.c
+index bca1775..1f7d032 100644
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -2540,8 +2540,7 @@ static int cfg80211_rtw_get_station(struct wiphy *wiphy,
+ 			|| check_fwstate(pmlmepriv, WIFI_ASOC_STATE) == _FALSE
+ 		) {
+ 			sinfo->filled |= STATION_INFO_SIGNAL;
+-			/* ToDo: need API to query hal_sta->rssi_stat.rssi */
+-			/* sinfo->signal = rtw_phl_rssi_to_dbm(psta->phl_sta->rssi_stat.rssi); */
++			sinfo->signal = rtw_phl_rssi_to_dbm(rtw_phl_get_sta_rssi(psta->phl_sta));
+ 		}
+ 		sinfo->filled |= STATION_INFO_INACTIVE_TIME;
+ 		sinfo->inactive_time = rtw_get_passing_time_ms(psta->sta_stats.last_rx_time);
+@@ -6092,11 +6091,8 @@ static int	cfg80211_rtw_dump_station(struct wiphy *wiphy, struct net_device *nde
+ 	sinfo->filled = 0;
+ 
+ 	if (psta) {
+-		sinfo->filled |= STATION_INFO_SIGNAL;
+-		/* ToDo: need API to query hal_sta->rssi_stat.rssi */
+-		/* sinfo->signal = rtw_phl_rssi_to_dbm(psta->phl_sta->rssi_stat.rssi); */
+-		sinfo->filled |= STATION_INFO_INACTIVE_TIME;
+-		sinfo->inactive_time = rtw_get_passing_time_ms(psta->sta_stats.last_rx_time);
++		/* get sinfo from .get_station implementation */
++		cfg80211_rtw_get_station(wiphy, ndev, mac, sinfo);
+ 	}
+ 
+ #ifdef CONFIG_RTW_MESH
+-- 
+2.51.0
+

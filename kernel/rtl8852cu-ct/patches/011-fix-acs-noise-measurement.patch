@@ -1,0 +1,84 @@
+diff --git a/core/rtw_phl.c b/core/rtw_phl.c
+index 7709465..e303fc2 100644
+--- a/core/rtw_phl.c
++++ b/core/rtw_phl.c
+@@ -2617,7 +2617,12 @@ s8 rtw_acs_get_noise_dbm(struct _ADAPTER *a, enum band_type band, u8 ch)
+ 	rtn = rtw_phl_get_acs_info(d->phl, &parm);
+ 
+ 	if (rtn == RTW_PHL_STATUS_SUCCESS)
+-		return parm.rpt.nhm_pwr;
++	{
++		if (parm.rpt.idle_noise_pwr != 0 && parm.rpt.idle_noise_pwr != 0xff)
++			return parm.rpt.idle_noise_pwr;
++		else
++			return parm.rpt.nhm_pwr;
++	}
+ 
+ 	return -110;
+ }
+diff --git a/phl/hal_g6/hal_api_bb.c b/phl/hal_g6/hal_api_bb.c
+index 6fe7489..5c52045 100644
+--- a/phl/hal_g6/hal_api_bb.c
++++ b/phl/hal_g6/hal_api_bb.c
+@@ -1739,6 +1739,7 @@ enum rtw_hal_status rtw_hal_bb_acs_mntr_result(struct hal_info_t *hal_info,
+ 		rpt->clm_ratio = mntr_rpt.clm_ratio;
+ 		rpt->nhm_pwr = mntr_rpt.nhm_pwr;
+ 		rpt->nhm_ratio = mntr_rpt.nhm_ratio;
++		rpt->idle_noise_pwr = mntr_rpt.idle_noise_pwr;
+ 		hal_mem_cpy(hal_info->hal_com, rpt->nhm_rpt, mntr_rpt.nhm_rpt, NHM_RPT_NUM);
+ 		return RTW_HAL_STATUS_SUCCESS;
+ 	}
+diff --git a/phl/hal_g6/phy/bb/halbb_env_mntr.c b/phl/hal_g6/phy/bb/halbb_env_mntr.c
+index 797012a..f9c2895 100644
+--- a/phl/hal_g6/phy/bb/halbb_env_mntr.c
++++ b/phl/hal_g6/phy/bb/halbb_env_mntr.c
+@@ -3576,6 +3576,7 @@ u8 halbb_env_mntr_result(struct bb_info *bb_0, struct env_mntr_rpt *rpt,
+ 		rpt->nhm_idle_cnt = env->nhm_idle_cnt;
+ 		rpt->nhm_pwr = env->nhm_pwr;
+ 		rpt->nhm_pwr_0p5 = env->nhm_pwr_0p5;
++		rpt->idle_noise_pwr = (u8)(env->idle_pwr_physts >> 3);
+ 		rpt->ccx_rpt_result |= NHM_SUCCESS;
+ 		halbb_mem_cpy(bb, &rpt->nhm_rpt[0], &env->nhm_rpt[0],
+ 			      NHM_RPT_NUM);
+@@ -3586,6 +3587,7 @@ u8 halbb_env_mntr_result(struct bb_info *bb_0, struct env_mntr_rpt *rpt,
+ 		rpt->nhm_idle_ratio = ENV_MNTR_FAIL_BYTE;
+ 		rpt->nhm_pwr = ENV_MNTR_FAIL_BYTE;
+ 		rpt->nhm_pwr_0p5 = ENV_MNTR_FAIL_BYTE;
++		rpt->idle_noise_pwr = ENV_MNTR_FAIL_BYTE;
+ 		for (i = 0; i < NHM_RPT_NUM; i++)
+ 			rpt->nhm_rpt[i] = ENV_MNTR_FAIL_BYTE;
+ 	}
+@@ -3730,7 +3732,8 @@ void halbb_idle_time_pwr_physts(struct bb_info *bb, struct physts_rxd *desc,
+ 	BB_DBG(bb, DBG_PHY_STS, "cck=%d, idle_pwr=%d.%d, nhm_pwr=%d\n",
+ 	       is_cck_rate, idle_pwr >> 1, (idle_pwr & 1) * 5, env->nhm_pwr);
+ 
+-	if (idle_pwr > (env->nhm_pwr + 10) && env->nhm_pwr != 0)
++	if (((idle_pwr >> 1) > (env->nhm_pwr + 10) && env->nhm_pwr != 0) ||
++			idle_pwr == 0)
+ 		return;
+ 
+ 	if (env->idle_pwr_physts != 0)
+diff --git a/phl/hal_g6/phy/bb/halbb_env_mntr_ex.h b/phl/hal_g6/phy/bb/halbb_env_mntr_ex.h
+index e889ac6..7a61ec6 100644
+--- a/phl/hal_g6/phy/bb/halbb_env_mntr_ex.h
++++ b/phl/hal_g6/phy/bb/halbb_env_mntr_ex.h
+@@ -171,6 +171,7 @@ struct env_mntr_rpt {
+ 	u16			nhm_idle_cnt; /*sample cnt*/
+ 	u8			nhm_pwr; /*110+x(dBm), unit = 1dB*/
+ 	u8			nhm_pwr_0p5; /*110+x/2(dBm), unit = 0.5dB*/
++	u8			idle_noise_pwr;
+ 	u8			ifs_clm_tx_ratio; /*percent*/
+ 	u8			ifs_clm_edcca_excl_cca_ratio; /*percent*/
+ 	u8			ifs_clm_cck_fa_ratio; /*percent*/
+diff --git a/phl/phl_acs_def.h b/phl/phl_acs_def.h
+index bf0cbe8..171de7c 100644
+--- a/phl/phl_acs_def.h
++++ b/phl/phl_acs_def.h
+@@ -23,6 +23,7 @@ struct acs_mntr_rpt {
+ 	u8 clm_ratio;
+ 	u8 nhm_ratio;
+ 	u8 nhm_pwr;
++	u8 idle_noise_pwr;
+ 	u8 nhm_rpt[NHM_RPT_NUM];
+ };
+ struct rtw_acs_info_parm {

@@ -1,0 +1,13 @@
+diff --git a/Makefile b/Makefile
+index f7d7ff5..c46a7c2 100644
+--- a/Makefile
++++ b/Makefile
+@@ -102,7 +102,7 @@ CONFIG_80211W = y
+ CONFIG_REDUCE_TX_CPU_LOADING = n
+ CONFIG_BR_EXT = y
+ CONFIG_TDLS = n
+-CONFIG_WIFI_MONITOR = n
++CONFIG_WIFI_MONITOR = y
+ CONFIG_MCC_MODE = n
+ CONFIG_APPEND_VENDOR_IE_ENABLE = n
+ CONFIG_RTW_NAPI = y

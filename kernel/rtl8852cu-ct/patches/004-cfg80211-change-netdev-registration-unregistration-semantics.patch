@@ -1,0 +1,101 @@
+From 166c80237146e9bba22c8724b36ba861bb5892a5 Mon Sep 17 00:00:00 2001
+From: Rhnn Hur <hurrhnn@icmp.kr>
+Date: Fri, 3 Oct 2025 10:26:04 +0900
+Subject: [PATCH] cfg80211: change netdev registration/unregistration semantics
+
+We used to not require anything in terms of registering netdevs
+with cfg80211, using a netdev notifier instead. However, in the
+next patch reducing RTNL locking, this causes big problems, and
+the simplest way is to just require drivers to do things better.
+
+Change the registration/unregistration semantics to require the
+drivers to call cfg80211_(un)register_netdevice() when this is
+happening due to a cfg80211 request, i.e. add_virtual_intf() or
+del_virtual_intf() (or if it somehow has to happen in any other
+cfg80211 callback).
+
+Otherwise, in other contexts, drivers may continue to use the
+normal netdev (un)registration functions as usual.
+
+Internally, we still use the netdev notifier and track (by the
+new wdev->registered bool) if the wdev had already been added
+to cfg80211 or not.
+
+Link: https://lore.kernel.org/r/20210122161942.cf2f4b65e4e9.Ida8234e50da13eb675b557bac52a713ad4eddf71@changeid
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: Rhnn Hur <hurrhnn@icmp.kr>
+---
+ os_dep/linux/ioctl_cfg80211.c | 4 ++--
+ os_dep/linux/os_intfs.c       | 4 ++--
+ os_dep/osdep_service_linux.c  | 4 ++--
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/os_dep/linux/ioctl_cfg80211.c b/os_dep/linux/ioctl_cfg80211.c
+index ed14b38..bca1775 100644
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -4953,7 +4953,7 @@ static int rtw_cfg80211_add_monitor_if(_adapter *padapter, char *name, struct ne
+ 	mon_wdev->iftype = NL80211_IFTYPE_MONITOR;
+ 	mon_ndev->ieee80211_ptr = mon_wdev;
+ 
+-	ret = register_netdevice(mon_ndev);
++	ret = cfg80211_register_netdevice(mon_ndev);
+ 	if (ret)
+ 		goto out;
+ 
+@@ -5107,7 +5107,7 @@ static int cfg80211_rtw_del_virtual_intf(struct wiphy *wiphy,
+ 		pwdev_priv = adapter_wdev_data(adapter);
+ 
+ 		if (ndev == pwdev_priv->pmon_ndev) {
+-			unregister_netdevice(ndev);
++			cfg80211_unregister_netdevice(ndev);
+ 			pwdev_priv->pmon_ndev = NULL;
+ 			pwdev_priv->ifname_mon[0] = '\0';
+ 			RTW_INFO(FUNC_NDEV_FMT" remove monitor ndev\n", FUNC_NDEV_ARG(ndev));
+diff --git a/os_dep/linux/os_intfs.c b/os_dep/linux/os_intfs.c
+index 41cba05..41a48fa 100644
+--- a/os_dep/linux/os_intfs.c
++++ b/os_dep/linux/os_intfs.c
+@@ -655,7 +655,7 @@ int rtw_os_ndev_register(_adapter *adapter, const char *name)
+ 	if (rtnl_lock_needed)
+ 		ret = (register_netdev(ndev) == 0) ? _SUCCESS : _FAIL;
+ 	else
+-		ret = (register_netdevice(ndev) == 0) ? _SUCCESS : _FAIL;
++		ret = (cfg80211_register_netdevice(ndev) == 0) ? _SUCCESS : _FAIL;
+ 
+ 	if (ret == _SUCCESS)
+ 		adapter->registered = 1;
+@@ -697,7 +697,7 @@ void rtw_os_ndev_unregister(_adapter *adapter)
+ 		if (rtnl_lock_needed)
+ 			unregister_netdev(netdev);
+ 		else
+-			unregister_netdevice(netdev);
++			cfg80211_unregister_netdevice(netdev);
+ 	}
+ 
+ 	adapter->registered = 0;
+diff --git a/os_dep/osdep_service_linux.c b/os_dep/osdep_service_linux.c
+index ed86daa..78c79a9 100644
+--- a/os_dep/osdep_service_linux.c
++++ b/os_dep/osdep_service_linux.c
+@@ -873,7 +873,7 @@ int rtw_change_ifname(_adapter *padapter, const char *ifname)
+ 	if (rtnl_lock_needed)
+ 		unregister_netdev(cur_pnetdev);
+ 	else
+-		unregister_netdevice(cur_pnetdev);
++		cfg80211_unregister_netdevice(cur_pnetdev);
+ 
+ 	rereg_priv->old_pnetdev = cur_pnetdev;
+ 
+@@ -892,7 +892,7 @@ int rtw_change_ifname(_adapter *padapter, const char *ifname)
+ 	if (rtnl_lock_needed)
+ 		ret = register_netdev(pnetdev);
+ 	else
+-		ret = register_netdevice(pnetdev);
++		ret = cfg80211_register_netdevice(pnetdev);
+ 
+ 	if (ret != 0) {
+ 		goto error;
+-- 
+2.51.0
+

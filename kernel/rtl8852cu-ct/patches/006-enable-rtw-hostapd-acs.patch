@@ -1,0 +1,13 @@
+diff --git a/include/autoconf.h b/include/autoconf.h
+index 20fee21..fd7bdad 100644
+--- a/include/autoconf.h
++++ b/include/autoconf.h
+@@ -167,7 +167,7 @@
+ 	#ifndef CONFIG_NATIVEAP_MLME
+ 		#define CONFIG_HOSTAPD_MLME
+ 	#endif
+-	/* #define CONFIG_RTW_HOSTAPD_ACS */
++	#define CONFIG_RTW_HOSTAPD_ACS
+ 	/*#define CONFIG_FIND_BEST_CHANNEL*/
+ #endif
+ 

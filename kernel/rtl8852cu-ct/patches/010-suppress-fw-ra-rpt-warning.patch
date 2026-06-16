@@ -1,0 +1,13 @@
+diff --git a/phl/hal_g6/phy/bb/halbb_ra.c b/phl/hal_g6/phy/bb/halbb_ra.c
+index 78676aa..58b1130 100644
+--- a/phl/hal_g6/phy/bb/halbb_ra.c
++++ b/phl/hal_g6/phy/bb/halbb_ra.c
+@@ -1963,7 +1963,7 @@ u32 halbb_get_fw_ra_rpt(struct bb_info *bb, u16 len, u8 *c2h)
+ 		} else
+ #endif
+ 		{
+-			BB_WARNING("[%s][2]Error macid = %d!!\n", __func__, macid_rpt);
++			BB_DBG(bb, DBG_RA, "[%s][2]Error macid = %d!!\n", __func__, macid_rpt);
+ 			return 0;
+ 		}
+ 	}
