@@ -1,0 +1,206 @@
+diff --git a/debug.c b/debug.c
+index a6cb015..27b2674 100644
+--- a/debug.c
++++ b/debug.c
+@@ -236,7 +236,7 @@ static ssize_t rtw89_debugfs_file_write(struct file *file,
+ 	return debugfs_priv->cb_write(rtwdev, debugfs_priv, buf, count);
+ }
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ static const struct debugfs_short_fops file_ops_single_r = {
+ 	.read = rtw89_debugfs_file_read,
+ 	.llseek = generic_file_llseek,
+diff --git a/mac80211.c b/mac80211.c
+index 9fccb9d..910b1c4 100644
+--- a/mac80211.c
++++ b/mac80211.c
+@@ -76,7 +76,7 @@ static void rtw89_ops_stop(struct ieee80211_hw *hw)
+ 	rtw89_core_stop(rtwdev);
+ }
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0) || defined(BUILD_OPENWRT)
+ static int rtw89_ops_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
+ #else
+ static int rtw89_ops_config(struct ieee80211_hw *hw, u32 changed)
+@@ -1038,7 +1038,7 @@ static int rtw89_ops_ampdu_action(struct ieee80211_hw *hw,
+ 	return 0;
+ }
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0) || defined(BUILD_OPENWRT)
+ static int rtw89_ops_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx,
+ 				       u32 value)
+ #else
+@@ -1155,7 +1155,7 @@ static int rtw89_ops_set_bitrate_mask(struct ieee80211_hw *hw,
+ }
+ 
+ static
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0) || defined(BUILD_OPENWRT)
+ int rtw89_ops_set_antenna(struct ieee80211_hw *hw, int radio_idx, u32 tx_ant, u32 rx_ant)
+ #else
+ int rtw89_ops_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
+@@ -1187,7 +1187,7 @@ int rtw89_ops_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
+ }
+ 
+ static
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0) || defined(BUILD_OPENWRT)
+ int rtw89_ops_get_antenna(struct ieee80211_hw *hw, int radio_idx, u32 *tx_ant,
+ 			  u32 *rx_ant)
+ #else
+@@ -1315,18 +1315,18 @@ static void rtw89_ops_cancel_hw_scan(struct ieee80211_hw *hw,
+ 
+ static void rtw89_ops_sta_rc_update(struct ieee80211_hw *hw,
+ 				    struct ieee80211_vif *vif,
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ 				    struct ieee80211_link_sta *link_sta,
+ 				    u32 changed)
+ #else
+ 				    struct ieee80211_sta *sta, u32 changed)
+ #endif
+ {
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ 	struct rtw89_sta *rtwsta = sta_to_rtwsta(link_sta->sta);
+ #endif
+ 	struct rtw89_dev *rtwdev = hw->priv;
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ 	struct rtw89_sta_link *rtwsta_link;
+ 
+ 	rtwsta_link = rtwsta->links[link_sta->link_id];
+@@ -2035,7 +2035,7 @@ const struct ieee80211_ops rtw89_ops = {
+ 	.remain_on_channel		= rtw89_ops_remain_on_channel,
+ 	.cancel_remain_on_channel	= rtw89_ops_cancel_remain_on_channel,
+ 	.set_sar_specs		= rtw89_ops_set_sar_specs,
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ 	.link_sta_rc_update	= rtw89_ops_sta_rc_update,
+ #else
+ 	.sta_rc_update		= rtw89_ops_sta_rc_update,
+diff --git a/phy.c b/phy.c
+index 96d1144..42d59b4 100644
+--- a/phy.c
++++ b/phy.c
+@@ -231,7 +231,7 @@ static u64 rtw89_phy_ra_mask_cfg(struct rtw89_dev *rtwdev,
+ 		return -1;
+ 	}
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ 	if (link_sta->eht_cap.has_eht) {
+ 		cfg_mask |= u64_encode_bits(mask->control[band].eht_mcs[0],
+ 					    RA_MASK_EHT_1SS_RATES);
+@@ -299,7 +299,7 @@ static void rtw89_phy_ra_gi_ltf(struct rtw89_dev *rtwdev,
+ 	if (!rtwsta_link->use_cfg_mask)
+ 		return;
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ 	if (link_sta->eht_cap.has_eht) {
+ 		ltf = mask->control[nl_band].eht_ltf;
+ 		gi = mask->control[nl_band].eht_gi;
+@@ -510,7 +510,7 @@ static void rtw89_phy_ra_sta_update(struct rtw89_dev *rtwdev,
+ 	ra->csi_mode = csi_mode;
+ }
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ void rtw89_phy_ra_update_sta_link(struct rtw89_dev *rtwdev,
+ 				  struct rtw89_sta_link *rtwsta_link,
+ 				  u32 changed)
+@@ -555,13 +555,13 @@ void rtw89_phy_ra_update_sta(struct rtw89_dev *rtwdev, struct ieee80211_sta *sta
+ 			     u32 changed)
+ {
+ 	struct rtw89_sta *rtwsta = sta_to_rtwsta(sta);
+-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0)
++#if 0
+ 	struct rtw89_vif_link *rtwvif_link;
+ #endif
+ 	struct rtw89_sta_link *rtwsta_link;
+ 	unsigned int link_id;
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ 	rtw89_sta_for_each_link(rtwsta, rtwsta_link, link_id)
+ 		rtw89_phy_ra_update_sta_link(rtwdev, rtwsta_link, changed);
+ #else
+@@ -600,7 +600,7 @@ static bool __check_rate_pattern(struct rtw89_phy_rate_pattern *next,
+ 	return true;
+ }
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ enum __rtw89_hw_rate_invalid_bases {
+ 	/* no EHT rate for ax chip */
+ 	RTW89_HW_RATE_EHT_NSS1_MCS0 = RTW89_HW_RATE_INVAL,
+@@ -625,7 +625,7 @@ void __rtw89_phy_rate_pattern_vif(struct rtw89_dev *rtwdev,
+ 	struct rtw89_phy_rate_pattern next_pattern = {0};
+ 	const struct rtw89_chan *chan = rtw89_chan_get(rtwdev,
+ 						       rtwvif_link->chanctx_idx);
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ 	static const u16 hw_rate_eht[][RTW89_CHIP_GEN_NUM] = {
+ 		RTW89_HW_RATE_BY_CHIP_GEN(EHT_NSS1_MCS0),
+ 		RTW89_HW_RATE_BY_CHIP_GEN(EHT_NSS2_MCS0),
+@@ -657,7 +657,7 @@ void __rtw89_phy_rate_pattern_vif(struct rtw89_dev *rtwdev,
+ 	u8 tx_nss = rtwdev->hal.tx_nss;
+ 	u8 i;
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ 	if (chip_gen == RTW89_CHIP_AX)
+ 		goto rs_11ax;
+ 
+@@ -714,7 +714,7 @@ rs_11ax:
+ 	if (!next_pattern.enable)
+ 		goto out;
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ 	if (unlikely(next_pattern.rate >= RTW89_HW_RATE_INVAL)) {
+ 		rtw89_debug(rtwdev, RTW89_DBG_RA,
+ 			    "pattern invalid target: chip_gen %d, mode 0x%x\n",
+diff --git a/phy.h b/phy.h
+index c30b966..527f2d0 100644
+--- a/phy.h
++++ b/phy.h
+@@ -1001,7 +1001,7 @@ void rtw89_phy_ra_assoc(struct rtw89_dev *rtwdev, struct rtw89_sta_link *rtwsta_
+ void rtw89_phy_ra_update(struct rtw89_dev *rtwdev);
+ void rtw89_phy_ra_update_sta(struct rtw89_dev *rtwdev, struct ieee80211_sta *sta,
+ 			     u32 changed);
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0) || defined(BUILD_OPENWRT)
+ void rtw89_phy_ra_update_sta_link(struct rtw89_dev *rtwdev,
+ 				  struct rtw89_sta_link *rtwsta_link,
+ 				  u32 changed);
+diff --git a/usb.c b/usb.c
+index e03e947..58bb373 100644
+--- a/usb.c
++++ b/usb.c
+@@ -639,7 +639,7 @@ static int rtw89_usb_init_rx(struct rtw89_dev *rtwdev)
+ 	struct sk_buff *rx_skb;
+ 	int i;
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+ 	rtwusb->rxwq = alloc_workqueue("rtw89_usb: rx wq", WQ_BH | WQ_PERCPU, 0);
+ #elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+ 	rtwusb->rxwq = alloc_workqueue("rtw89_usb: rx wq", WQ_BH, 0);
+diff --git a/wow.c b/wow.c
+index f9803e2..1940f98 100644
+--- a/wow.c
++++ b/wow.c
+@@ -666,7 +666,7 @@ static struct ieee80211_key_conf *rtw89_wow_gtk_rekey(struct rtw89_dev *rtwdev,
+ 	memcpy(rekey_conf->key, gtk,
+ 	       flex_array_size(rekey_conf, key, cipher_info->len));
+ 
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0) || defined(BUILD_OPENWRT)
+ 	if (ieee80211_vif_is_mld(wow_vif))
+ 		key = ieee80211_gtk_rekey_add(wow_vif, keyidx, gtk,
+ 					      cipher_info->len,
