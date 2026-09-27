@@ -1,0 +1,40 @@
+Kernel 6.18's lib/crypto declares its own one-shot hmac_sha256() (struct
+hmac_sha256_key based) in <crypto/sha2.h>, which reaches these files via
+the OS abstraction headers and conflicts with the driver's private
+RFC 2104 helper of the same name. Rename the driver's copy.
+
+--- a/core/crypto/sha256.h
++++ b/core/crypto/sha256.h
+@@ -13,8 +13,8 @@
+
+ int hmac_sha256_vector(const u8 *key, size_t key_len, size_t num_elem,
+ 		       const u8 *addr[], const size_t *len, u8 *mac);
+-int hmac_sha256(const u8 *key, size_t key_len, const u8 *data,
+-		size_t data_len, u8 *mac);
++int rtw_hmac_sha256(const u8 *key, size_t key_len, const u8 *data,
++		    size_t data_len, u8 *mac);
+ int sha256_prf(const u8 *key, size_t key_len, const char *label,
+ 	       const u8 *data, size_t data_len, u8 *buf, size_t buf_len);
+ int sha256_prf_bits(const u8 *key, size_t key_len, const char *label,
+--- a/core/crypto/sha256.c
++++ b/core/crypto/sha256.c
+@@ -91,7 +91,7 @@
+
+
+ /**
+- * hmac_sha256 - HMAC-SHA256 over data buffer (RFC 2104)
++ * rtw_hmac_sha256 - HMAC-SHA256 over data buffer (RFC 2104)
+  * @key: Key for HMAC operations
+  * @key_len: Length of the key in bytes
+  * @data: Pointers to the data area
+@@ -99,8 +99,8 @@
+  * @mac: Buffer for the hash (32 bytes)
+  * Returns: 0 on success, -1 on failure
+  */
+-int hmac_sha256(const u8 *key, size_t key_len, const u8 *data,
+-		size_t data_len, u8 *mac)
++int rtw_hmac_sha256(const u8 *key, size_t key_len, const u8 *data,
++		    size_t data_len, u8 *mac)
+ {
+ 	return hmac_sha256_vector(key, key_len, 1, &data, &data_len, mac);
+ }

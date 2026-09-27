@@ -1,0 +1,22 @@
+cfg80211 removed WIPHY_FLAG_SUPPORTS_5_10_MHZ (5/10 MHz support is no
+longer opt-in per wiphy), so guard the monitor-debug flag assignment
+with an upper kernel version bound to keep the driver building on 6.18.
+
+--- a/os_dep/linux/ioctl_cfg80211.c
++++ b/os_dep/linux/ioctl_cfg80211.c
+@@ -10240,12 +10240,13 @@
+ 	#endif /* KERNEL_VERSION 3.19 */
+ #endif /* CONFIG_RTW_SCAN_RAND */
+
+-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0))
++#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)) && \
++	(LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0))
+ #ifdef CONFIG_WIFI_MONITOR
+ 	/* Currently only for Monitor debugging */
+ 	wiphy->flags |= WIPHY_FLAG_SUPPORTS_5_10_MHZ;
+ #endif
+-#endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)) */
++#endif /* 3.11.0 <= LINUX_VERSION_CODE < 6.15.0 */
+
+ #ifdef CONFIG_ECSA_PHL
+ #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 12, 0))
