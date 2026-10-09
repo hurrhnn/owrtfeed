@@ -1,0 +1,296 @@
+From: Rhnn Hur <hurrhnn@icmp.kr>
+Subject: [PATCH] luci-app-airoha-flowsense: support AN7563
+
+AN7563 (AN7552 die, e.g. ipTIME BE5100M; OpenWrt subtarget
+airoha/an7563). The package Makefile applies this patch only for
+that subtarget, so the code assumes an AN7563 and does not detect the
+SoC at run time.
+
+- devmem is read-only and limited to a fixed whitelist (PSE, GDM1/GDM2,
+  CDM1/CDM2, PLL 0x1fa202ac/0x1fa202b8). Reads happen only while
+  airoha_eth / airoha-eth is bound, because reading an unclocked block
+  can hang the bus. GDM3 and GDM4 are never read.
+- PLL readback uses the AN7552 decode: PCW 0x1fa202ac[31:24], POSDIV
+  0x1fa202b8[20:18]. pll_valid tells the UI whether the value is real.
+- The NPU firmware is found through the firmware-name of any npu@* DT
+  node instead of the fixed EN7581 file name, with fallbacks.
+- JSON API: getStatus adds pll_valid and eth_bound. getFrameEngine
+  drops gdm4 and returns {"error": ...} while the Ethernet driver is
+  not bound.
+- The UI shows the two Wi-Fi bands of the MT7992 (no 6 GHz); its
+  5 GHz radio is 3SS EHT160 (4323 Mbps).
+- The PSE walk covers 11 ports, like the stock fe_core.
+- npu_cores no longer prints a second "0" when there is no NPU.
+
+This patch is applied only when building for the airoha/an7563
+subtarget (see the package Makefile).
+---
+--- a/htdocs/luci-static/resources/view/airoha_flowsense/status.js
++++ b/htdocs/luci-static/resources/view/airoha_flowsense/status.js
+@@ -126,10 +126,11 @@ var GAUGE_VARS = '--soc-card-bg:#16181d;
+ /* ── Existing Helpers ── */
+ var bandInfo = [
+ 	{ name: '2.4 GHz', accent: 'var(--soc-gauge)', rtyCol: '#EFBF04', gaugeCol: '#EFBF04', maxMbps: 688,   sMax: 700,   sStep: 100,  sDiv: 100,  sCap: '×100 MBPS'  },
+-	{ name: '5 GHz',   accent: 'var(--soc-gauge)', rtyCol: '#305CDE', gaugeCol: '#4d7cff', maxMbps: 5765,  sMax: 6000,  sStep: 1000, sDiv: 1000, sCap: '×1000 MBPS' },
+-	{ name: '6 GHz',   accent: 'var(--soc-gauge)', rtyCol: '#2CFF05', gaugeCol: '#2CFF05', maxMbps: 11529, sMax: 12000, sStep: 2000, sDiv: 1000, sCap: '×1000 MBPS' }
++	{ name: '5 GHz',   accent: 'var(--soc-gauge)', rtyCol: '#305CDE', gaugeCol: '#4d7cff', maxMbps: 4323,  sMax: 5000,  sStep: 1000, sDiv: 1000, sCap: '×1000 MBPS' }
+ ];
+ 
++function pllMhz(st) { return (st && st.pll_valid === false) ? 0 : (st ? st.pll_freq_mhz : 0); }
++
+ 
+ function fmtFreq(khz) { return (!khz || khz === 0) ? 'N/A' : (khz / 1000).toFixed(0) + ' MHz'; }
+ function fmtK(n) {
+@@ -880,7 +881,7 @@ function buildCpuNpuTacho(cs, ppe, st, t
+ 	               : (cs.npuActive ? 100 : 0);
+ 
+ 	// CPU frequency — same source as the existing freq bar
+-	var fs       = freqBarState(st.cpu_hw_freq, st.cpu_min_freq, st.cpu_max_freq, st.pll_freq_mhz, st.cpu_governor);
++	var fs       = freqBarState(st.cpu_hw_freq, st.cpu_min_freq, st.cpu_max_freq, pllMhz(st), st.cpu_governor);
+ 	var freqMhz  = Math.round(fs.freq / 1000);
+ 	var governor = (st.cpu_governor && st.cpu_governor !== 'unknown') ? st.cpu_governor.toUpperCase() : '';
+ 
+@@ -1224,14 +1225,12 @@ function buildWifiFramesBanana(bandIdx,
+ 		p.join('') + '</svg>';
+ }
+ 
+-// Returns array of 3 elements (6 GHz, 5 GHz, 2.4 GHz) for direct inclusion in compass-wrap
+ function buildWifiTachoElements(wifi, ti, st, ppe) {
+ 	var bands = (wifi && Array.isArray(wifi.bands)) ? wifi.bands : [];
+ 	var isMlo = !!(wifi && wifi.mlo);
+ 	var fallbackType = (st && st.npu_loaded) ? 'npu' : 'dma';
+ 	var elems = [];
+-	// 6 GHz → 5 GHz → 2.4 GHz (band index 2 → 1 → 0)
+-	for (var b = 2; b >= 0; b--) {
++	for (var b = bandInfo.length - 1; b >= 0; b--) {
+ 		var ws = null;
+ 		for (var j = 0; j < bands.length; j++) if (bands[j].band === b) { ws = bands[j]; break; }
+ 		var txQ = getTxQueue(ti, b) || { type: fallbackType };
+@@ -1563,7 +1562,7 @@ return view.extend({
+ 				// WiFi band tachometers
+ 				var wbands = (wifi && Array.isArray(wifi.bands)) ? wifi.bands : [];
+ 				var wFallback = st.npu_loaded ? 'npu' : 'dma';
+-				for (var wb = 0; wb < 3; wb++) {
++				for (var wb = 0; wb < bandInfo.length; wb++) {
+ 					var wws = null;
+ 					for (var wj = 0; wj < wbands.length; wj++) if (wbands[wj].band === wb) { wws = wbands[wj]; break; }
+ 					updateWifiBandSVG(wb, wws, (getTxQueue(ti, wb) || { type: wFallback }).type, ppe);
+--- a/root/usr/libexec/rpcd/luci.airoha_flowsense
++++ b/root/usr/libexec/rpcd/luci.airoha_flowsense
+@@ -4,12 +4,78 @@
+ 
+ . /lib/functions.sh
+ 
++airoha_eth_bound() {
++	local d e
++	for d in /sys/bus/platform/drivers/airoha_eth /sys/bus/platform/drivers/airoha-eth; do
++		[ -d "$d" ] || continue
++		for e in "$d"/*; do
++			[ -L "$e" ] && [ "${e##*/}" != "module" ] && return 0
++		done
++	done
++	return 1
++}
++
++soc_reg_ok() {
++	case "$1" in
++		0x1fb50104|\
++		0x1fb50604|0x1fb50608|0x1fb50648|0x1fb5064c|\
++		0x1fb51604|0x1fb51608|0x1fb51648|0x1fb5164c|\
++		0x1fb50580|0x1fb50590|0x1fb50594|0x1fb505a0|0x1fb505a4|\
++		0x1fb51580|0x1fb51590|0x1fb51594|0x1fb515a0|0x1fb515a4|\
++		0x1fa202ac|0x1fa202b8) return 0 ;;
++	esac
++	local a=$(($1))
++	[ $((a & 3)) -eq 0 ] || return 1
++	[ "$a" -ge $((0x1fb50120)) ] && [ "$a" -le $((0x1fb50148)) ] && return 0
++	[ "$a" -ge $((0x1fb50150)) ] && [ "$a" -le $((0x1fb50178)) ] && return 0
++	return 1
++}
++
++soc_rd() {
++	local v
++	[ "$ETH_BOUND" = "1" ] && soc_reg_ok "$1" || { echo 0; return 1; }
++	v=$(devmem "$1" 2>/dev/null)
++	echo $((${v:-0}))
++}
++
++read_pll() {
++	pll_freq=0
++	pll_valid=false
++	command -v devmem > /dev/null 2>&1 || return
++	local pcw pd
++	pcw=$(soc_rd 0x1fa202ac) || return
++	pd=$(soc_rd 0x1fa202b8) || return
++	pcw=$(( (pcw >> 24) & 0xFF ))
++	pd=$(( (pd >> 18) & 7 ))
++	[ "$pcw" -gt 0 ] || return
++	case "$pd" in
++		0) pll_freq=$((pcw * 50)); pll_valid=true ;;
++		1) pll_freq=$((pcw * 25)); pll_valid=true ;;
++	esac
++}
++
++npu_fw_path() {
++	local n rel f
++	for n in /proc/device-tree/soc/npu@* /proc/device-tree/npu@*; do
++		[ -f "$n/firmware-name" ] || continue
++		rel=$(tr '\0' '\n' < "$n/firmware-name" 2>/dev/null | grep -m1 "rv32")
++		[ -n "$rel" ] && [ -f "/lib/firmware/$rel" ] && { echo "/lib/firmware/$rel"; return; }
++	done
++	for f in /lib/firmware/airoha/an7563_npu_rv32.bin \
++		 /lib/firmware/airoha/*npu_rv32.bin; do
++		[ -f "$f" ] && { echo "$f"; return; }
++	done
++}
++
++ETH_BOUND=0
++airoha_eth_bound && ETH_BOUND=1
++
+ get_status() {
+ 	# === NPU Status ===
+-	local npu_fw="/lib/firmware/airoha/en7581_MT7996_npu_rv32.bin"
++	local npu_fw=$(npu_fw_path)
+ 	local npu_ver="Unknown"
+ 
+-	if [ -f "$npu_fw" ]; then
++	if [ -n "$npu_fw" ] && [ -f "$npu_fw" ]; then
+ 		npu_ver=$(strings "$npu_fw" 2>/dev/null | grep -oE '([0-9]+\.[0-9]+\.[0-9]+-)?TLB[0-9.]+[-_v0-9]*' | head -1)
+ 		[ -z "$npu_ver" ] && npu_ver="Unknown"
+ 	fi
+@@ -30,7 +96,7 @@ get_status() {
+ 		npu_clock=$(cat /sys/kernel/debug/clk/npu/clk_rate 2>/dev/null || echo 0)
+ 	fi
+ 
+-	local npu_cores=$(grep -c "airoha-npu-wdt" /proc/interrupts 2>/dev/null || echo 0)
++	local npu_cores=$(grep -c "airoha-npu-wdt" /proc/interrupts 2>/dev/null)
+ 
+ 	local offload_bound=$(cat /sys/kernel/debug/ppe/bind 2>/dev/null | grep -c "^[0-9a-fA-F]")
+ 	local offload_total=$(cat /sys/kernel/debug/ppe/entries 2>/dev/null | grep -c "^[0-9a-fA-F]")
+@@ -77,23 +143,8 @@ get_status() {
+ 		cpu_avail_freqs=$(cat "$cpufreq_path/scaling_available_frequencies" 2>/dev/null || echo "")
+ 	fi
+ 
+-	# Read actual PLL frequency from hardware (detects overclock)
+-	local pll_freq=0
+-	if command -v devmem > /dev/null 2>&1; then
+-		local pcw_raw=$(devmem 0x1fa202b4 2>/dev/null)
+-		local chg_raw=$(devmem 0x1fa202b8 2>/dev/null)
+-		if [ -n "$pcw_raw" ] && [ -n "$chg_raw" ]; then
+-			pcw_raw=$((pcw_raw))
+-			chg_raw=$((chg_raw))
+-			local pcw_int=$(( (pcw_raw >> 24) & 0x7F ))
+-			local pll_posdiv=$(( (chg_raw >> 4) & 7 ))
+-			if [ "$pll_posdiv" -eq 0 ]; then
+-				pll_freq=$((pcw_int * 50))
+-			else
+-				pll_freq=$((pcw_int * 50 / (1 << pll_posdiv)))
+-			fi
+-		fi
+-	fi
++	local pll_freq=0 pll_valid=false
++	read_pll
+ 
+ 	# Count online CPUs
+ 	local cpu_count=0
+@@ -101,9 +152,10 @@ get_status() {
+ 		cpu_count=$(ls -d /sys/devices/system/cpu/cpu[0-9]* 2>/dev/null | wc -l)
+ 	fi
+ 
+-	printf '{"npu_version":"%s","npu_loaded":%s,"npu_device":"%s","npu_clock":%d,"npu_cores":%d,"offload_bound":%d,"offload_total":%d,"memory_regions":%s,"cpu_cur_freq":%d,"cpu_hw_freq":%d,"cpu_governor":"%s","cpu_avail_governors":"%s","cpu_min_freq":%d,"cpu_max_freq":%d,"cpu_avail_freqs":"%s","cpu_count":%d,"pll_freq_mhz":%d}' \
++	printf '{"npu_version":"%s","npu_loaded":%s,"npu_device":"%s","npu_clock":%d,"npu_cores":%d,"offload_bound":%d,"offload_total":%d,"memory_regions":%s,"cpu_cur_freq":%d,"cpu_hw_freq":%d,"cpu_governor":"%s","cpu_avail_governors":"%s","cpu_min_freq":%d,"cpu_max_freq":%d,"cpu_avail_freqs":"%s","cpu_count":%d,"pll_freq_mhz":%d,"pll_valid":%s,"eth_bound":%s}' \
+ 		"${npu_ver:-Unknown}" "$npu_loaded" "${npu_device:-}" "${npu_clock:-0}" "${npu_cores:-0}" "${offload_bound:-0}" "${offload_total:-0}" "$regions" \
+-		"${cpu_cur_freq:-0}" "${cpu_hw_freq:-0}" "${cpu_governor:-unknown}" "${cpu_avail_governors:-}" "${cpu_min_freq:-0}" "${cpu_max_freq:-0}" "${cpu_avail_freqs:-}" "${cpu_count:-0}" "${pll_freq:-0}"
++		"${cpu_cur_freq:-0}" "${cpu_hw_freq:-0}" "${cpu_governor:-unknown}" "${cpu_avail_governors:-}" "${cpu_min_freq:-0}" "${cpu_max_freq:-0}" "${cpu_avail_freqs:-}" "${cpu_count:-0}" "${pll_freq:-0}" \
++		"$pll_valid" "$([ "$ETH_BOUND" = "1" ] && echo true || echo false)"
+ }
+ 
+ get_ppe_entries() {
+@@ -390,13 +442,18 @@ get_frame_engine() {
+ 		return
+ 	fi
+ 
++	if [ "$ETH_BOUND" != "1" ]; then
++		echo '{"error":"frame engine not initialised (airoha_eth / airoha-eth not bound)"}'
++		return
++	fi
++
+ 	# PSE queue status (IQ=hi16, OQ=lo16) and drop counts for each port
+ 	local i reg_q reg_d pse_ports=""
+-	for i in 0 1 2 3 4 5 6 7 8 9; do
++	for i in 0 1 2 3 4 5 6 7 8 9 10; do
+ 		reg_q=$(printf "0x%x" $((0x1fb50150 + i * 4)))
+ 		reg_d=$(printf "0x%x" $((0x1fb50120 + i * 4)))
+-		local qval=$(($(devmem $reg_q)))
+-		local dval=$(($(devmem $reg_d)))
++		local qval=$(soc_rd $reg_q)
++		local dval=$(soc_rd $reg_d)
+ 		local iq=$(( (qval >> 16) & 0xFFFF ))
+ 		local oq=$(( qval & 0xFFFF ))
+ 		[ -n "$pse_ports" ] && pse_ports="${pse_ports},"
+@@ -404,44 +461,38 @@ get_frame_engine() {
+ 	done
+ 
+ 	# PSE shared buffer
+-	local psb=$(($(devmem 0x1fb50104)))
++	local psb=$(soc_rd 0x1fb50104)
+ 	local pse_used=$(( (psb >> 16) & 0xFFFF ))
+ 	local pse_free=$(( psb & 0x7FFF ))
+ 
+ 	# GDM counters (TX_OK, TX_DROP, RX_OK, RX_FC_DROP, RX_OVER_DROP)
+ 	# Read as hex to handle large 32-bit counters
+-	local gdm1_tx=$(($(devmem 0x1fb50604)))
+-	local gdm1_txd=$(($(devmem 0x1fb50608)))
+-	local gdm1_rx=$(($(devmem 0x1fb50648)))
+-	local gdm1_rxd=$(($(devmem 0x1fb5064c)))
+-
+-	local gdm2_tx=$(($(devmem 0x1fb51604)))
+-	local gdm2_txd=$(($(devmem 0x1fb51608)))
+-	local gdm2_rx=$(($(devmem 0x1fb51648)))
+-	local gdm2_rxd=$(($(devmem 0x1fb5164c)))
+-
+-	local gdm4_tx=$(($(devmem 0x1fb52604)))
+-	local gdm4_txd=$(($(devmem 0x1fb52608)))
+-	local gdm4_rx=$(($(devmem 0x1fb52648)))
+-	local gdm4_rxd=$(($(devmem 0x1fb5264c)))
++	local gdm1_tx=$(soc_rd 0x1fb50604)
++	local gdm1_txd=$(soc_rd 0x1fb50608)
++	local gdm1_rx=$(soc_rd 0x1fb50648)
++	local gdm1_rxd=$(soc_rd 0x1fb5064c)
++
++	local gdm2_tx=$(soc_rd 0x1fb51604)
++	local gdm2_txd=$(soc_rd 0x1fb51608)
++	local gdm2_rx=$(soc_rd 0x1fb51648)
++	local gdm2_rxd=$(soc_rd 0x1fb5164c)
+ 
+ 	# CDM counters (TX_OK, RXCPU_OK, RXHWF_OK, RXCPU_DROP, RXHWF_DROP)
+-	local cdm1_tx=$(($(devmem 0x1fb50580)))
+-	local cdm1_rxcpu=$(($(devmem 0x1fb50590)))
+-	local cdm1_rxhwf=$(($(devmem 0x1fb50594)))
+-	local cdm1_rxcpud=$(($(devmem 0x1fb505a0)))
+-	local cdm1_rxhwfd=$(($(devmem 0x1fb505a4)))
+-
+-	local cdm2_tx=$(($(devmem 0x1fb51580)))
+-	local cdm2_rxcpu=$(($(devmem 0x1fb51590)))
+-	local cdm2_rxhwf=$(($(devmem 0x1fb51594)))
+-	local cdm2_rxcpud=$(($(devmem 0x1fb515a0)))
+-	local cdm2_rxhwfd=$(($(devmem 0x1fb515a4)))
++	local cdm1_tx=$(soc_rd 0x1fb50580)
++	local cdm1_rxcpu=$(soc_rd 0x1fb50590)
++	local cdm1_rxhwf=$(soc_rd 0x1fb50594)
++	local cdm1_rxcpud=$(soc_rd 0x1fb505a0)
++	local cdm1_rxhwfd=$(soc_rd 0x1fb505a4)
++
++	local cdm2_tx=$(soc_rd 0x1fb51580)
++	local cdm2_rxcpu=$(soc_rd 0x1fb51590)
++	local cdm2_rxhwf=$(soc_rd 0x1fb51594)
++	local cdm2_rxcpud=$(soc_rd 0x1fb515a0)
++	local cdm2_rxhwfd=$(soc_rd 0x1fb515a4)
+ 
+ 	printf '{"pse_ports":[%s],"pse_used":%d,"pse_free":%d,' "$pse_ports" "$pse_used" "$pse_free"
+ 	printf '"gdm1":{"tx":%d,"tx_drop":%d,"rx":%d,"rx_drop":%d},' "$gdm1_tx" "$gdm1_txd" "$gdm1_rx" "$gdm1_rxd"
+ 	printf '"gdm2":{"tx":%d,"tx_drop":%d,"rx":%d,"rx_drop":%d},' "$gdm2_tx" "$gdm2_txd" "$gdm2_rx" "$gdm2_rxd"
+-	printf '"gdm4":{"tx":%d,"tx_drop":%d,"rx":%d,"rx_drop":%d},' "$gdm4_tx" "$gdm4_txd" "$gdm4_rx" "$gdm4_rxd"
+ 	printf '"cdm1":{"tx":%d,"rx_cpu":%d,"rx_hwf":%d,"rx_cpu_drop":%d,"rx_hwf_drop":%d},' "$cdm1_tx" "$cdm1_rxcpu" "$cdm1_rxhwf" "$cdm1_rxcpud" "$cdm1_rxhwfd"
+ 	printf '"cdm2":{"tx":%d,"rx_cpu":%d,"rx_hwf":%d,"rx_cpu_drop":%d,"rx_hwf_drop":%d}}' "$cdm2_tx" "$cdm2_rxcpu" "$cdm2_rxhwf" "$cdm2_rxcpud" "$cdm2_rxhwfd"
+ }

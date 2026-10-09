@@ -3,11 +3,23 @@
 include $(TOPDIR)/rules.mk
 
 PKG_VERSION:=1.1.9
-PKG_RELEASE:=6
+PKG_RELEASE:=7
 PKG_LICENSE:=Apache-2.0
 
 LUCI_TITLE:=LuCI Airoha FlowSense — Offload & PPE Monitor
-LUCI_DEPENDS:=+luci-base @TARGET_airoha
+LUCI_DEPENDS:=+luci-base @TARGET_airoha \
+	+TARGET_airoha_an7563:iw +TARGET_airoha_an7563:ip-tiny \
+	+TARGET_airoha_an7563:ip-bridge +TARGET_airoha_an7563:tc-tiny
+
+ifeq ($(CONFIG_TARGET_airoha_an7563),y)
+  PATCH:=patch --no-backup-if-mismatch -F0
+else
+  PATCH_DIR:=/dev/null/an7563-patches
+  ifneq ($(filter refresh update,$(MAKECMDGOALS)),)
+    $(error $(notdir $(CURDIR)): patches/ is AN7563-only; refresh or update it on an airoha/an7563 config)
+  endif
+endif
+PKG_PREPARED_DEPENDS:=CONFIG_TARGET_airoha_an7563
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
